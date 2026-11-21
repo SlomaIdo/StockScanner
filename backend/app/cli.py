@@ -4,6 +4,7 @@ Usage: ``uv run stockscanner --help`` (or ``python -m app.cli``).
 """
 
 import datetime as dt
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -17,8 +18,11 @@ from app.models import DailyBar, Exchange, IngestRun, Security
 from app.pipeline.fx import update_fx
 from app.pipeline.prices import backfill_prices, update_prices
 from app.pipeline.quality import run_quality_checks
+from app.pipeline.report import build_report
 from app.pipeline.universe import build_universe, resolve_groups
 from app.providers.yahoo import YahooProvider
+
+DEFAULT_REPORT_PATH = Path(__file__).resolve().parents[2] / "docs" / "DATA_REPORT.md"
 
 app = typer.Typer(help="StockScanner data pipeline", no_args_is_help=True)
 
@@ -124,6 +128,20 @@ def quality() -> None:
         typer.echo(f"{mark}{check.name}: {check.count}  ({check.description})")
         for sample in check.samples:
             typer.echo(f"      {sample}")
+
+
+@app.command()
+def report(
+    output: Annotated[Path, typer.Option(help="Where to write the Markdown report")] = (
+        DEFAULT_REPORT_PATH
+    ),
+) -> None:
+    """Write a Markdown report: coverage, freshness, quality and a usage guide."""
+    with _session() as session:
+        markdown = build_report(session)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(markdown, encoding="utf-8")
+    typer.echo(f"Wrote {output}")
 
 
 @app.command()

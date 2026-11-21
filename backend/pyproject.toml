@@ -42,6 +42,10 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# Markdown tables in the report template are long by nature.
+"app/pipeline/report.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true

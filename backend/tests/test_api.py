@@ -113,3 +113,21 @@ def test_runs_and_quality(client: TestClient, db: Session) -> None:
     checks = {c["name"]: c["count"] for c in quality["checks"]}
     assert checks["missing_prices"] == 2  # ESLT and AAPL have no bars
     assert checks["inconsistent_ohlc"] == 0
+
+
+def test_data_report(db: Session) -> None:
+    from app.pipeline.report import build_report
+
+    _load(db)
+    report = build_report(db)
+    assert report.startswith("# StockScanner data report")
+    for section in (
+        "## At a glance",
+        "## Freshness",
+        "## Coverage by exchange",
+        "## Data quality",
+        "## How to use the data",
+    ):
+        assert section in report
+    assert "| IL | Tel Aviv Stock Exchange | XTAE |" in report
+    assert "2026-11-20" in report  # latest bar date
