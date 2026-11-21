@@ -16,7 +16,7 @@ from typing import Protocol
 from sqlalchemy import ScalarSelect, and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session
 
 from app.fundamentals.countries import country_code
 from app.models import (
@@ -102,7 +102,7 @@ def update_fundamentals(
 ) -> FundamentalsStats:
     """Fetch fundamentals for companies with missing or stale data from ``provider``.
 
-    SEC covers securities that have a CIK. Yahoo covers primary listings without one.
+    SEC covers securities that have a CIK. Yahoo covers primary listings without SEC data.
     """
     cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=max_age_days)
     ident = SecurityIdentifier
@@ -120,11 +120,12 @@ def update_fundamentals(
         )
     )
     if provider.name != SEC:
-        sec = aliased(SecurityIdentifier)
+        # Fill in for companies without SEC data: non-US companies, and SEC filers whose
+        # filings have no XBRL data yet (recent IPOs, many foreign and fund filers).
         stmt = stmt.where(
             Security.primary_security_id.is_(None),
-            ~select(sec.id)
-            .where(and_(sec.security_id == Security.id, sec.provider == SEC))
+            ~select(FinancialFact.id)
+            .where(and_(FinancialFact.security_id == Security.id, FinancialFact.source == SEC))
             .exists(),
         )
     if limit:

@@ -252,7 +252,7 @@ def test_update_fundamentals_targets_and_profiles(db: Session) -> None:
         }
     )  # fmt: skip
     update_fundamentals(db, yahoo, max_age_days=30)
-    # Yahoo skips SEC filers (GOOGL, TEVA), dual listings (TEVA.TA) - only LUMI and GOOG.
+    # Yahoo skips companies with SEC data (GOOGL, TEVA) and dual listings (TEVA.TA).
     assert sorted(yahoo.calls) == ["GOOG", "LUMI.TA"]
 
     lumi = db.get(Security, _sec_id(db, "LUMI"))
@@ -266,6 +266,20 @@ def test_update_fundamentals_targets_and_profiles(db: Session) -> None:
     update_profiles(db, yahoo, max_age_days=90)
     assert "LUMI.TA" not in yahoo.calls
     assert "TEVA" in yahoo.calls
+
+
+def test_yahoo_fills_in_for_sec_filers_without_data(db: Session) -> None:
+    _universe(db)
+    map_sec_ciks(db, {"GOOGL": (1652044, "Nasdaq"), "TEVA": (818686, "NYSE")})
+    # SEC returns nothing for Teva (e.g. a filer without XBRL data).
+    sec = FakeFundamentals(
+        name="sec", data={"1652044": (None, [fact("revenue", "2025-12-31", 1.0)])}
+    )
+    update_fundamentals(db, sec, max_age_days=7)
+    yahoo = FakeFundamentals()
+    update_fundamentals(db, yahoo, max_age_days=30)
+    assert "TEVA" in yahoo.calls
+    assert "GOOGL" not in yahoo.calls
 
 
 def test_facts_owner_for_dual_listing_and_share_class(db: Session) -> None:
