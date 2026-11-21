@@ -10,13 +10,14 @@ details and to stay under 10 requests per second; set ``SS_SEC_USER_AGENT``.
 
 import datetime as dt
 import logging
+import re
 import time
 from collections import defaultdict
 from typing import Any
 
 import httpx
 
-from app.fundamentals.metrics import OUTFLOW_METRICS
+from app.fundamentals.metrics import METRICS, OUTFLOW_METRICS, UnitKind
 from app.providers.base import Fact, Profile, ProviderError
 
 log = logging.getLogger(__name__)
@@ -127,6 +128,19 @@ CONCEPTS: dict[str, list[str]] = {
     ],
 }
 
+# Units a metric may be reported in; anything else (e.g. a custom "BillionsCubicFeet"
+# unit on an EPS tag) is a tagging error and skipped.
+_UNIT_PATTERNS = {
+    UnitKind.MONEY: re.compile(r"^[A-Z]{3}$"),
+    UnitKind.PER_SHARE: re.compile(r"^[A-Z]{3}/shares$"),
+    UnitKind.SHARES: re.compile(r"^shares$"),
+}
+
+
+def valid_unit(metric: str, unit: str) -> bool:
+    return bool(_UNIT_PATTERNS[METRICS[metric].unit].match(unit))
+
+
 ANNUAL_DAYS = (340, 380)
 QUARTER_DAYS = (80, 100)
 
@@ -165,6 +179,8 @@ def parse_companyfacts(payload: dict[str, Any]) -> list[Fact]:
             taxonomy, name = concept.split(":")
             units = facts_by_taxonomy.get(taxonomy, {}).get(name, {}).get("units", {})
             for unit, rows in units.items():
+                if not valid_unit(metric, unit):
+                    continue
                 per_period: dict[tuple[str, dt.date], list[tuple[Fact, float]]] = defaultdict(list)
                 for row in rows:
                     end = _date(row.get("end"))

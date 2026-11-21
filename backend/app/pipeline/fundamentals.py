@@ -15,6 +15,7 @@ from typing import Protocol
 
 from sqlalchemy import ScalarSelect, and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, aliased
 
 from app.fundamentals.countries import country_code
@@ -142,18 +143,29 @@ def update_fundamentals(
                 run.note(f"{identifier.external_symbol}: {exc}")
                 continue
             now = dt.datetime.now(dt.UTC)
-            identifier.fundamentals_fetched_at = now
-            if profile is not None:
-                apply_profile(session, identifier.security_id, profile)
-                identifier.profile_fetched_at = now
-            if facts:
-                stats.facts_stored += store_facts(
-                    session, identifier.security_id, provider.name, facts
+            symbol = identifier.external_symbol
+            try:
+                identifier.fundamentals_fetched_at = now
+                if profile is not None:
+                    apply_profile(session, identifier.security_id, profile)
+                    identifier.profile_fetched_at = now
+                stored = (
+                    store_facts(session, identifier.security_id, provider.name, facts)
+                    if facts
+                    else 0
                 )
+                session.commit()
+            except SQLAlchemyError as exc:
+                # One bad payload must not stop the run; it is retried next time.
+                session.rollback()
+                stats.companies_failed += 1
+                run.note(f"{symbol}: could not store: {str(exc).splitlines()[0][:200]}")
+                continue
+            if facts:
+                stats.facts_stored += stored
                 stats.companies_ok += 1
             else:
                 stats.companies_failed += 1
-            session.commit()
             if (stats.companies_ok + stats.companies_failed) % 50 == 0:
                 log.info(
                     "progress: %d ok, %d without data, %d facts",

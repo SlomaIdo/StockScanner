@@ -101,6 +101,24 @@ def test_parse_companyfacts_maps_and_prioritises_concepts() -> None:
     assert values("free_cash_flow") == [("2018-12-31", 30, "2019-02-01")]
 
 
+def test_parse_companyfacts_skips_invalid_units() -> None:
+    payload = {
+        "facts": {
+            "us-gaap": {
+                "EarningsPerShareDiluted": {
+                    "units": {
+                        "USD/shares": [_row(0.21, "2012-12-31", "2013-02-01", "2012-01-01")],
+                        "BillionsCubicFeet": [_row(0.21, "2011-12-31", "2012-02-01", "2011-01-01")],
+                    }
+                },
+                "Revenues": _concept("shares", _row(5, "2012-12-31", "2013-02-01", "2012-01-01")),
+            }
+        }
+    }
+    facts = parse_companyfacts(payload)
+    assert [(f.metric, f.unit) for f in facts] == [("eps_diluted", "USD/shares")]
+
+
 def test_parse_companyfacts_ifrs_units() -> None:
     payload = {
         "facts": {
