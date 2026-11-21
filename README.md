@@ -46,7 +46,25 @@ docker compose exec backend stockscanner universe
 docker compose exec backend stockscanner backfill --years 10
 ```
 
-The first backfill of ~5,000 stocks takes roughly 20 minutes. Other commands:
+Then load fundamentals (financial statements) and company profiles. SEC asks automated
+clients to identify themselves, so first set `SS_SEC_USER_AGENT="StockScanner your-name
+you@example.com"` (in `.env` or your shell) and restart the containers.
+
+```bash
+docker compose exec backend stockscanner fundamentals --source sec
+```
+
+```bash
+docker compose exec backend stockscanner fundamentals --source yahoo
+```
+
+```bash
+docker compose exec backend stockscanner profiles
+```
+
+The first backfill of ~5,000 stocks takes roughly 20 minutes; SEC fundamentals about 30
+minutes; Yahoo fundamentals and profiles a couple of hours. After that the nightly job keeps
+everything current in batches. Other commands:
 
 | Command | What it does |
 |---------|--------------|

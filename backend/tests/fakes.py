@@ -3,7 +3,7 @@
 import datetime as dt
 from dataclasses import dataclass, field
 
-from app.providers.base import Listing, PriceHistory
+from app.providers.base import Fact, Listing, PriceHistory, Profile
 
 
 @dataclass
@@ -71,4 +71,40 @@ def listing(
         price=price,
         market_cap=market_cap,
         avg_volume_3m=avg_volume,
+    )
+
+
+@dataclass
+class FakeFundamentals:
+    """Fake fundamentals/profile provider keyed by external symbol."""
+
+    name: str = "yahoo"
+    data: dict[str, tuple[Profile | None, list[Fact]]] = field(default_factory=dict)
+    calls: list[str] = field(default_factory=list)
+
+    def fundamentals(self, external_symbol: str) -> tuple[Profile | None, list[Fact]]:
+        self.calls.append(external_symbol)
+        return self.data.get(external_symbol, (None, []))
+
+    def profile(self, external_symbol: str) -> Profile | None:
+        self.calls.append(external_symbol)
+        return self.data.get(external_symbol, (None, []))[0]
+
+
+def fact(
+    metric: str,
+    end: str,
+    value: float,
+    *,
+    period_type: str = "FY",
+    unit: str = "USD",
+    known: str | None = None,
+) -> Fact:
+    return Fact(
+        metric=metric,
+        period_type=period_type,
+        period_end=dt.date.fromisoformat(end),
+        value=value,
+        unit=unit,
+        known_since=dt.date.fromisoformat(known or end),
     )

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     database_url: str = "postgresql+psycopg://stockscanner:stockscanner@localhost:5432/stockscanner"
     cors_origins: list[str] = ["http://localhost:3000"]
+    # SEC asks automated clients to identify themselves, ideally with a contact email:
+    # set SS_SEC_USER_AGENT="StockScanner your-name your@email".
+    sec_user_agent: str = "StockScanner personal-research stockscanner@example.com"
 
 
 @lru_cache

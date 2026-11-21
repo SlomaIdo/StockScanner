@@ -47,6 +47,7 @@ class IdentifierOut(BaseModel):
 
 class SecurityDetail(SecurityOut):
     country_code: str | None
+    industry: str | None
     isin: str | None
     listed_on: dt.date | None
     last_seen_on: dt.date | None
@@ -92,3 +93,20 @@ class QualityReportOut(BaseModel):
     generated_at: dt.datetime
     issues: int
     checks: list[QualityCheckOut]
+
+
+class MetricRow(BaseModel):
+    code: str
+    label: str
+    statement: str
+    unit: str | None
+    values: list[float | None]
+
+
+class FundamentalsOut(BaseModel):
+    security_id: int
+    owner_security_id: int | None
+    source: str | None
+    period_type: str
+    periods: list[dt.date]
+    metrics: list[MetricRow]

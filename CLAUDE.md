@@ -15,6 +15,11 @@
   Universe rules (pipeline/universe.py): foreign-currency quotes and passive quote lines
   (turnover < 1e-6/day) dropped; `EXCLUDED_LISTINGS` for hand-picked exceptions; group
   refreshes resolve cross-listings against other groups already in the DB.
+  Fundamentals: `app/fundamentals/metrics.py` (26 standard metrics), `providers/sec.py`
+  (EDGAR companyfacts -> metrics, concept priority lists), Yahoo statements in
+  `providers/yahoo.py`, pipeline in `pipeline/fundamentals.py`. Facts are point-in-time
+  (`known_since`), stored only when new/changed, attached to one listing per company
+  (`facts_owner` resolves dual listings and share classes).
   `stockscanner report` regenerates docs/DATA_REPORT.md after data changes.
   Yahoo quirks handled: sub-unit quotes (ILA, GBp), split-adjusted closes (refetch on new
   split), 100x unit breaks in TASE history, inconsistent OHLC on illiquid stocks.

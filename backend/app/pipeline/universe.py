@@ -95,7 +95,8 @@ _LEGAL_SUFFIXES = {
 
 def company_key(name: str) -> str:
     """Normalize a company name for cross-listing matching ("Apple Inc." -> "apple")."""
-    tokens = re.sub(r"[^a-z0-9 ]+", " ", name.lower()).split()
+    cleaned = re.sub(r"\b(class|series|cl)\s+[a-z0-9]\b", " ", name.lower())
+    tokens = re.sub(r"[^a-z0-9 ]+", " ", cleaned).split()
     while tokens and tokens[-1] in _LEGAL_SUFFIXES:
         tokens.pop()
     return " ".join(tokens)

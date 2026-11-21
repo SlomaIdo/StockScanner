@@ -15,11 +15,13 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.session import get_sessionmaker
 from app.models import DailyBar, Exchange, IngestRun, Security
+from app.pipeline.fundamentals import map_sec_ciks, update_fundamentals, update_profiles
 from app.pipeline.fx import update_fx
 from app.pipeline.prices import backfill_prices, update_prices
 from app.pipeline.quality import run_quality_checks
 from app.pipeline.report import build_report
 from app.pipeline.universe import build_universe, resolve_groups
+from app.providers.sec import SecProvider
 from app.providers.yahoo import YahooProvider
 
 DEFAULT_REPORT_PATH = Path(__file__).resolve().parents[2] / "docs" / "DATA_REPORT.md"
@@ -103,10 +105,57 @@ def update(group: GroupOpt = None, mic: MicOpt = None) -> None:
     )
 
 
+def _sec() -> SecProvider:
+    return SecProvider(get_settings().sec_user_agent)
+
+
+@app.command("sec-map")
+def sec_map() -> None:
+    """Link US listings to SEC company ids (CIK)."""
+    with _session() as session:
+        created = map_sec_ciks(session, _sec().ticker_map())
+    typer.echo(f"Mapped {created} new US listings to SEC CIKs")
+
+
+@app.command()
+def fundamentals(
+    source: Annotated[str, typer.Option(help="sec (US filers) or yahoo (everyone else)")] = "sec",
+    limit: Annotated[int | None, typer.Option(help="Max companies this run")] = None,
+    max_age: Annotated[int, typer.Option(help="Refetch data older than this many days")] = 7,
+) -> None:
+    """Fetch financial statements for companies with missing or stale data."""
+    provider = _sec() if source == "sec" else YahooProvider()
+    with _session() as session:
+        if source == "sec":
+            map_sec_ciks(session, _sec().ticker_map())
+        stats = update_fundamentals(session, provider, max_age, limit)
+    typer.echo(
+        f"{stats.companies_ok} companies updated, {stats.companies_failed} without data, "
+        f"{stats.facts_stored} new facts"
+    )
+
+
+@app.command()
+def profiles(
+    limit: Annotated[int | None, typer.Option(help="Max companies this run")] = None,
+    max_age: Annotated[int, typer.Option(help="Refetch profiles older than this")] = 90,
+) -> None:
+    """Fetch country of domicile and industry for tracked companies (Yahoo)."""
+    with _session() as session:
+        updated = update_profiles(session, YahooProvider(), max_age, limit)
+    typer.echo(f"Updated {updated} profiles")
+
+
 @app.command()
 def nightly(group: GroupOpt = None) -> None:
-    """Full nightly job: FX, universe refresh, then price update."""
+    """Full nightly job: FX, universe, prices, then a batch of fundamentals and profiles."""
     run_nightly(group)
+
+
+# Per-night batch sizes: the stalest companies go first, so everything cycles through.
+NIGHTLY_SEC_BATCH = 800  # ~0.5 s each; full US refresh about every 4 nights
+NIGHTLY_YAHOO_FUNDAMENTALS_BATCH = 300  # ~3 s each
+NIGHTLY_PROFILE_BATCH = 300
 
 
 def run_nightly(group: list[str] | None) -> None:
@@ -116,6 +165,16 @@ def run_nightly(group: list[str] | None) -> None:
         update_fx(session, provider)
         build_universe(session, provider, groups)
         update_prices(session, provider, [m for g in groups for m in g.mics])
+        names = {g.name for g in groups}
+        if "US" in names:
+            sec = _sec()
+            map_sec_ciks(session, sec.ticker_map())
+            update_fundamentals(session, sec, max_age_days=7, limit=NIGHTLY_SEC_BATCH)
+            update_profiles(session, provider, max_age_days=90, limit=NIGHTLY_PROFILE_BATCH)
+        if names - {"US"}:
+            update_fundamentals(
+                session, provider, max_age_days=30, limit=NIGHTLY_YAHOO_FUNDAMENTALS_BATCH
+            )
 
 
 @app.command()

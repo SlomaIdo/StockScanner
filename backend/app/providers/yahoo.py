@@ -9,11 +9,14 @@ from typing import Any
 import pandas as pd
 import yfinance as yf
 
+from app.fundamentals.metrics import METRICS, OUTFLOW_METRICS, UnitKind
 from app.providers.base import (
     Bar,
     Dividend,
+    Fact,
     Listing,
     PriceHistory,
+    Profile,
     ProviderError,
     Split,
     normalize_currency,
@@ -75,6 +78,36 @@ SUFFIXES: dict[str, str] = {
 }
 
 SCREEN_PAGE_SIZE = 250
+
+# Standard metric -> Yahoo statement row labels, in priority order.
+STATEMENT_ROWS: dict[str, list[str]] = {
+    "revenue": ["Total Revenue", "Operating Revenue"],
+    "cost_of_revenue": ["Cost Of Revenue", "Reconciled Cost Of Revenue"],
+    "gross_profit": ["Gross Profit"],
+    "rd_expense": ["Research And Development"],
+    "operating_income": ["Operating Income", "Total Operating Income As Reported"],
+    "ebitda": ["EBITDA", "Normalized EBITDA"],
+    "interest_expense": ["Interest Expense"],
+    "income_tax": ["Tax Provision"],
+    "net_income": ["Net Income Common Stockholders", "Net Income"],
+    "eps_basic": ["Basic EPS"],
+    "eps_diluted": ["Diluted EPS"],
+    "shares_diluted": ["Diluted Average Shares"],
+    "total_assets": ["Total Assets"],
+    "current_assets": ["Current Assets"],
+    "cash": ["Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments"],
+    "total_liabilities": ["Total Liabilities Net Minority Interest"],
+    "current_liabilities": ["Current Liabilities"],
+    "long_term_debt": ["Long Term Debt"],
+    "total_debt": ["Total Debt"],
+    "total_equity": ["Stockholders Equity", "Common Stock Equity"],
+    "shares_outstanding": ["Ordinary Shares Number", "Share Issued"],
+    "operating_cash_flow": ["Operating Cash Flow"],
+    "capex": ["Capital Expenditure"],
+    "free_cash_flow": ["Free Cash Flow"],
+    "dividends_paid": ["Cash Dividends Paid", "Common Stock Dividend Paid"],
+    "buybacks": ["Repurchase Of Capital Stock", "Common Stock Payments"],
+}
 
 
 def _num(value: Any) -> float | None:
@@ -158,6 +191,47 @@ def parse_history_frame(frame: pd.DataFrame) -> PriceHistory:
         if dividend:
             history.dividends.append(Dividend(ex_date=day, amount=dividend))
     return history
+
+
+def parse_statement_frames(
+    frames: list[tuple[str, pd.DataFrame]], currency: str, known_since: dt.date
+) -> list[Fact]:
+    """Map Yahoo statement frames (rows = line items, columns = period ends) to facts.
+
+    ``frames`` holds (period type, frame) pairs, e.g. ("FY", ticker.income_stmt). Yahoo has no
+    filing dates, so ``known_since`` is the date we fetched the data.
+    """
+    facts: list[Fact] = []
+    for period_type, frame in frames:
+        if frame is None or frame.empty:
+            continue
+        for metric, labels in STATEMENT_ROWS.items():
+            label = next((lbl for lbl in labels if lbl in frame.index), None)
+            if label is None:
+                continue
+            kind = METRICS[metric].unit
+            unit = {
+                UnitKind.MONEY: currency,
+                UnitKind.PER_SHARE: f"{currency}/shares",
+                UnitKind.SHARES: "shares",
+            }[kind]
+            for column, raw in frame.loc[label].items():
+                value = _num(raw)
+                if value is None:
+                    continue
+                if metric in OUTFLOW_METRICS:
+                    value = abs(value)
+                facts.append(
+                    Fact(
+                        metric=metric,
+                        period_type=period_type,
+                        period_end=pd.Timestamp(column).date(),  # type: ignore[arg-type]
+                        value=value,
+                        unit=unit,
+                        known_since=known_since,
+                    )
+                )
+    return facts
 
 
 def _ticker_frame(frame: pd.DataFrame, ticker: str) -> pd.DataFrame:
@@ -256,6 +330,44 @@ class YahooProvider:
             history = parse_history_frame(_ticker_frame(frame, ticker))
             out[currency] = [(b.date, b.close) for b in history.bars]
         return out
+
+    # -- fundamentals -----------------------------------------------------------
+
+    def fundamentals(self, external_symbol: str) -> tuple[Profile | None, list[Fact]]:
+        """Profile plus ~4 years of annual and ~6 quarters of quarterly statements."""
+        profile = self.profile(external_symbol)
+        if profile is None or not profile.reporting_currency:
+            return profile, []
+        ticker = yf.Ticker(external_symbol)
+        try:
+            frames = [
+                ("FY", ticker.income_stmt),
+                ("FY", ticker.balance_sheet),
+                ("FY", ticker.cashflow),
+                ("Q", ticker.quarterly_income_stmt),
+                ("Q", ticker.quarterly_balance_sheet),
+                ("Q", ticker.quarterly_cashflow),
+            ]
+        except Exception as exc:
+            raise ProviderError(f"Yahoo statements failed for {external_symbol}: {exc}") from exc
+        time.sleep(self.request_pause)
+        currency, _ = normalize_currency(profile.reporting_currency)
+        return profile, parse_statement_frames(frames, currency, dt.date.today())
+
+    def profile(self, external_symbol: str) -> Profile | None:
+        try:
+            info = yf.Ticker(external_symbol).info
+        except Exception as exc:
+            raise ProviderError(f"Yahoo profile failed for {external_symbol}: {exc}") from exc
+        time.sleep(self.request_pause)
+        if not info or not isinstance(info, dict) or len(info) < 3:
+            return None
+        return Profile(
+            country=info.get("country"),
+            sector=info.get("sector"),
+            industry=info.get("industry"),
+            reporting_currency=info.get("financialCurrency"),
+        )
 
     def _download(self, tickers: list[str], start: dt.date, end: dt.date) -> pd.DataFrame:
         try:

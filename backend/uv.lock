@@ -1733,6 +1733,7 @@ dependencies = [
     { name = "alembic" },
     { name = "apscheduler" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pandas" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
@@ -1744,7 +1745,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "mypy" },
     { name = "pandas-stubs" },
     { name = "pytest" },
@@ -1756,6 +1756,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
     { name = "apscheduler", specifier = ">=3.11.3" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "pandas", specifier = ">=3.1.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic-settings", specifier = ">=2.4" },
@@ -1767,7 +1768,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.27" },
     { name = "mypy", specifier = ">=1.11" },
     { name = "pandas-stubs", specifier = ">=3.1.0.261029" },
     { name = "pytest", specifier = ">=8.3" },

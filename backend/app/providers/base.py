@@ -111,3 +111,37 @@ class PriceProvider(Protocol):
     ) -> dict[str, list[tuple[dt.date, float]]]:
         """Daily rates as units of each currency per 1 USD."""
         ...
+
+
+@dataclass(frozen=True)
+class Fact:
+    """One standardized fundamentals value (see ``app.fundamentals.metrics``)."""
+
+    metric: str
+    period_type: str  # "FY" or "Q"
+    period_end: dt.date
+    value: float
+    unit: str  # currency code, "shares", or "<CCY>/shares"
+    known_since: dt.date  # filing date, or the date we first saw it if the source has none
+    period_start: dt.date | None = None
+    fiscal_year: int | None = None
+    fiscal_period: str | None = None  # FY, Q1..Q4
+    form: str | None = None  # e.g. 10-K, 10-Q, 20-F
+
+
+@dataclass(frozen=True)
+class Profile:
+    """Company profile details from a provider."""
+
+    country: str | None = None  # country name as the provider spells it
+    sector: str | None = None
+    industry: str | None = None
+    reporting_currency: str | None = None
+
+
+class FundamentalsProvider(Protocol):
+    name: str
+
+    def fundamentals(self, external_symbol: str) -> tuple[Profile | None, list[Fact]]:
+        """Profile (if the source has one) and standardized facts for one company."""
+        ...

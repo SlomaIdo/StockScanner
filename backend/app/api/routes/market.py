@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.schemas import (
     BarOut,
     ExchangeOut,
+    FundamentalsOut,
     IngestRunOut,
+    MetricRow,
     QualityCheckOut,
     QualityReportOut,
     SectorOut,
@@ -18,7 +20,9 @@ from app.api.schemas import (
     SecurityPage,
 )
 from app.db.session import get_db
-from app.models import DailyBar, IngestRun, Security
+from app.fundamentals.metrics import METRICS
+from app.models import DailyBar, FinancialFact, IngestRun, Security
+from app.pipeline.fundamentals import facts_owner
 from app.pipeline.quality import run_quality_checks
 
 router = APIRouter()
@@ -127,14 +131,15 @@ def get_security(security_id: int, db: Db) -> dict[str, Any]:
     row = db.execute(
         text(
             f"""
-            SELECT e.mic AS exchange_mic, sec.name AS sector, snap.price, snap.market_cap_usd,
-                   snap.snapshot_date,
+            SELECT e.mic AS exchange_mic, sec.name AS sector, ind.name AS industry,
+                   snap.price, snap.market_cap_usd, snap.snapshot_date,
                    (SELECT min(date) FROM daily_bars WHERE security_id = s.id) AS first_bar_date,
                    (SELECT max(date) FROM daily_bars WHERE security_id = s.id) AS last_bar_date,
                    (SELECT count(*) FROM daily_bars WHERE security_id = s.id) AS bar_count
             FROM securities s
             JOIN exchanges e ON e.id = s.exchange_id
             LEFT JOIN sectors sec ON sec.id = s.sector_id
+            LEFT JOIN industries ind ON ind.id = s.industry_id
             {_LATEST_SNAPSHOT}
             WHERE s.id = :id
             """
@@ -172,6 +177,88 @@ def get_bars(
     if end:
         stmt = stmt.where(DailyBar.date <= end)
     return list(db.scalars(stmt))
+
+
+@router.get(
+    "/securities/{security_id}/fundamentals",
+    response_model=FundamentalsOut,
+    tags=["securities"],
+)
+def get_fundamentals(
+    security_id: int,
+    db: Db,
+    period_type: Annotated[str, Query(pattern="^(FY|Q)$")] = "FY",
+    periods: Annotated[int, Query(ge=1, le=40)] = 8,
+) -> FundamentalsOut:
+    """Latest known value of each standard metric for the most recent periods.
+
+    Dual listings and extra share classes return the company's fundamentals from the
+    listing that holds them (``owner_security_id``). SEC data is preferred over Yahoo.
+    """
+    security = db.get(Security, security_id)
+    if security is None:
+        raise HTTPException(status_code=404, detail="Security not found")
+    owner = facts_owner(db, security)
+    empty = FundamentalsOut(
+        security_id=security_id,
+        owner_security_id=owner,
+        source=None,
+        period_type=period_type,
+        periods=[],
+        metrics=[],
+    )
+    if owner is None:
+        return empty
+    sources = list(
+        db.scalars(
+            select(FinancialFact.source).where(FinancialFact.security_id == owner).distinct()
+        )
+    )
+    source = "sec" if "sec" in sources else sources[0]
+    rows = db.execute(
+        text(
+            """
+            SELECT DISTINCT ON (metric, period_end) metric, period_end, value, unit
+            FROM financial_facts
+            WHERE security_id = :sid AND source = :src AND period_type = :pt
+            ORDER BY metric, period_end, known_since DESC
+            """
+        ),
+        {"sid": owner, "src": source, "pt": period_type},
+    ).all()
+    # Periods: the most recent ones that report revenue or net income (skips stray dates).
+    core = sorted(
+        {r.period_end for r in rows if r.metric in ("revenue", "net_income", "total_assets")},
+        reverse=True,
+    )[:periods]
+    if not core:
+        return empty
+    values: dict[str, dict[dt.date, tuple[float, str]]] = {}
+    for r in rows:
+        values.setdefault(r.metric, {})[r.period_end] = (r.value, r.unit)
+    metrics = []
+    for code, metric in METRICS.items():
+        by_period = values.get(code)
+        if not by_period:
+            continue
+        units = {by_period[p][1] for p in core if p in by_period}
+        metrics.append(
+            MetricRow(
+                code=code,
+                label=metric.label,
+                statement=metric.statement.value,
+                unit=units.pop() if len(units) == 1 else None,
+                values=[by_period[p][0] if p in by_period else None for p in core],
+            )
+        )
+    return FundamentalsOut(
+        security_id=security_id,
+        owner_security_id=owner,
+        source=source,
+        period_type=period_type,
+        periods=core,
+        metrics=metrics,
+    )
 
 
 @router.get("/ingest/runs", response_model=list[IngestRunOut], tags=["data"])

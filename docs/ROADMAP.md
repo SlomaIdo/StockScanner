@@ -84,14 +84,18 @@ fetched data nightly so our own history accumulates.
       series pending (Phase 3)
 - [x] Sub-unit quotes: London in pence (GBp), Tel Aviv in agorot (ILA)
 - [x] Data-quality checks and ingest monitoring
-- [ ] Fundamentals ingest: EDGAR (US), ESEF (EU), Yahoo (rest)
-- [ ] Statement normalization into one standard schema
-- [~] Nightly fundamentals snapshots: daily quote snapshots (market cap, P/E, P/B, yield)
-      done; full statements pending
-- [~] Unified sector/industry taxonomy: 11 sectors assigned from Yahoo; industries and
-      SIC mapping pending
+- [x] Fundamentals ingest: SEC EDGAR (US filers incl. 20-F/IFRS), Yahoo (rest).
+      ESEF (EU filings) deferred: needs LEI identifiers to match companies
+- [x] Statement normalization: 26 standard metrics, point-in-time with restatements
+- [x] Nightly fundamentals refresh (batched) plus daily quote snapshots (market cap, P/E,
+      P/B, yield)
+- [x] Sector/industry taxonomy: 11 sectors, industries and country of domicile from Yahoo
+      profiles (SIC mapping not needed)
 - [x] Exchange reference data (24 exchanges: US, Israel, Europe, Asia next wave)
 - [~] Exchange holiday calendars and FX rates: FX done, holiday calendars pending
+
+- [ ] ESEF (EU XBRL filings) via filings.xbrl.org, matched by LEI (GLEIF ISIN→LEI)
+- [ ] Derived Q4 flows for SEC data (FY minus Q1–Q3)
 
 ## Phase 2: Scanner & browser (MVP)
 

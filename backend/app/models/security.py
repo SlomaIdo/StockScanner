@@ -3,7 +3,7 @@
 import datetime as dt
 import enum
 
-from sqlalchemy import CHAR, Enum, ForeignKey, String, UniqueConstraint
+from sqlalchemy import CHAR, DateTime, Enum, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -79,5 +79,7 @@ class SecurityIdentifier(Base):
         server_default="1",
         comment="Provider quotes in a currency sub-unit (e.g. agorot, pence): divide by this",
     )
+    fundamentals_fetched_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    profile_fetched_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
     security: Mapped[Security] = relationship(back_populates="identifiers")

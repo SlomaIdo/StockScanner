@@ -146,6 +146,58 @@ def build_report(session: Session) -> str:
         WHERE base = 'USD' ORDER BY quote, date DESC
         """,
     )
+    fundamentals = _q(
+        session,
+        """
+        WITH company AS (
+            SELECT s.id, e.mic,
+                   EXISTS (SELECT 1 FROM financial_facts f WHERE f.security_id = s.id
+                           AND f.source = 'sec') AS has_sec,
+                   EXISTS (SELECT 1 FROM financial_facts f WHERE f.security_id = s.id
+                           AND f.source = 'yahoo') AS has_yahoo,
+                   (SELECT max(period_end) FROM financial_facts f WHERE f.security_id = s.id
+                    AND f.period_type = 'FY' AND f.metric = 'revenue') AS last_fy,
+                   (SELECT min(period_end) FROM financial_facts f WHERE f.security_id = s.id
+                    AND f.period_type = 'FY' AND f.metric = 'revenue') AS first_fy,
+                   s.country_code IS NOT NULL AS has_country,
+                   s.industry_id IS NOT NULL AS has_industry
+            FROM securities s JOIN exchanges e ON e.id = s.exchange_id
+            WHERE s.is_active AND s.primary_security_id IS NULL
+        )
+        SELECT mic, count(*) AS companies,
+               count(*) FILTER (WHERE has_sec) AS sec,
+               count(*) FILTER (WHERE has_yahoo AND NOT has_sec) AS yahoo,
+               count(*) FILTER (WHERE has_country) AS with_country,
+               count(*) FILTER (WHERE has_industry) AS with_industry,
+               percentile_disc(0.5) WITHIN GROUP (ORDER BY first_fy) AS median_first_fy,
+               max(last_fy) AS latest_fy
+        FROM company GROUP BY mic
+        """,
+    )
+    fact_totals = _q(
+        session,
+        """
+        SELECT source, count(*) AS facts, count(DISTINCT security_id) AS companies,
+               max(known_since) AS latest_known
+        FROM financial_facts GROUP BY source ORDER BY source
+        """,
+    )
+    countries = _q(
+        session,
+        """
+        SELECT coalesce(s.country_code, '(unknown)') AS country, count(*) AS n
+        FROM securities s
+        WHERE s.is_active AND s.primary_security_id IS NULL
+        GROUP BY 1 ORDER BY 2 DESC LIMIT 20
+        """,
+    )
+    industries = _q(
+        session,
+        """
+        SELECT count(DISTINCT industry_id) AS industries FROM securities
+        WHERE is_active AND industry_id IS NOT NULL
+        """,
+    )[0]["industries"]
     quality = run_quality_checks(session)
 
     out: list[str] = []
@@ -308,6 +360,84 @@ def build_report(session: Session) -> str:
         )  # fmt: skip
         w("")
 
+    # -- fundamentals ----------------------------------------------------------
+    w("## Fundamentals (financial statements)")
+    w("")
+    w(
+        "US companies come from SEC EDGAR (official filings, quarterly and annual, typically "
+        "back to 2009, each value with its filing date). Other companies come from Yahoo "
+        "(about 4 years annual and 6 quarters; dated by when we fetched them). Counts are per "
+        "company (primary listings); dual listings use their primary's data."
+    )
+    w("")
+    w(
+        _table(
+            ["Source", "Values stored", "Companies", "Latest value known since"],
+            [
+                [r["source"], _n(r["facts"]), _n(r["companies"]), str(r["latest_known"])]
+                for r in fact_totals
+            ]
+            or [["(none yet)", "0", "0", DASH]],
+            "lrrl",
+        )
+    )
+    w("")
+    group_totals: dict[str, dict[str, int]] = {}
+    group_years: dict[str, list[Any]] = {}
+    for r in fundamentals:
+        g = mic_group.get(r["mic"], "other")
+        t = group_totals.setdefault(
+            g, {"companies": 0, "sec": 0, "yahoo": 0, "country": 0, "industry": 0}
+        )
+        t["companies"] += r["companies"]
+        t["sec"] += r["sec"]
+        t["yahoo"] += r["yahoo"]
+        t["country"] += r["with_country"]
+        t["industry"] += r["with_industry"]
+        group_years.setdefault(g, []).append(r["latest_fy"])
+
+    def pct(part: int, whole: int) -> str:
+        return f"{_n(part)} ({part / whole:.0%})" if whole else "0"
+
+    w(
+        _table(
+            ["Group", "Companies", "With SEC data", "With Yahoo data", "Without data",
+             "Country known", "Industry known"],
+            [
+                [
+                    g, _n(t["companies"]), pct(t["sec"], t["companies"]),
+                    pct(t["yahoo"], t["companies"]),
+                    pct(t["companies"] - t["sec"] - t["yahoo"], t["companies"]),
+                    pct(t["country"], t["companies"]), pct(t["industry"], t["companies"]),
+                ]
+                for g, t in group_totals.items()
+            ],
+            "lrrrrrr",
+        )
+    )  # fmt: skip
+    w("")
+    w(
+        f"{_n(industries)} industries are in use under the 11 sectors. The nightly job keeps "
+        "fundamentals fresh in batches: SEC data is re-checked about weekly, Yahoo monthly, "
+        "profiles (country, industry) every 90 days."
+    )
+    w("")
+    w("### Companies by country of domicile")
+    w("")
+    w(
+        "Where companies are based, which can differ from where they trade (e.g. many Israeli "
+        "companies trade mainly on Nasdaq). Primary listings only."
+    )
+    w("")
+    w(
+        _table(
+            ["Country", "Companies"],
+            [[r["country"], _n(r["n"])] for r in countries],
+            "lr",
+        )
+    )
+    w("")
+
     # -- FX --------------------------------------------------------------------
     w("## FX rates (units per 1 USD, latest)")
     w("")
@@ -358,7 +488,9 @@ USAGE_GUIDE = """## How to use the data
 | FX | `fx_rates` rows are *units of `quote` per 1 USD* (e.g. ILS 3.7). Price in USD = local price ÷ rate. |
 | Market cap | From the daily quote snapshot, in local currency and USD (`quote_snapshots`). |
 | Dual listings | `primary_security_id` points to the company's most liquid listing. Exclude rows where it is set to count each company once (e.g. sector indices). |
-| Sectors | 11 sectors aligned with Yahoo's names. Industries come later. |
+| Sectors | 11 sectors aligned with Yahoo's names; industries (e.g. "Banks - Regional") below them. |
+| Country | `securities.country_code` is the company's country of domicile (ISO code), not the exchange's. |
+| Fundamentals | `financial_facts`: one row per metric, period (`FY` or `Q`) and the date the value became known. Use the latest `known_since` per period for current figures, or filter `known_since <= date` for point-in-time backtests. Money is in the reporting currency (`unit`), which can differ from the listing currency. |
 | Inactive stocks | Not returned by the source for 14+ days, or rejected as a passive cross-listing. History is kept. |
 | Delay | Prices are end-of-day; today's bar appears after the evening run for that market. |
 
@@ -378,6 +510,8 @@ USAGE_GUIDE = """## How to use the data
 | `stockscanner nightly -g IL` | Run one market's full nightly job now (FX, universe, prices) |
 | `stockscanner universe -g US` | Re-select which stocks are tracked in a group |
 | `stockscanner backfill --years 10` | Load history for stocks that have none |
+| `stockscanner fundamentals --source sec` | Refresh SEC fundamentals (US); `--source yahoo` for the rest |
+| `stockscanner profiles` | Refresh country and industry |
 
 In Docker, prefix with `docker compose exec backend`.
 
@@ -390,6 +524,7 @@ In Docker, prefix with `docker compose exec backend`.
 | `GET /api/securities?q=teva&exchange=XTAE&sector=Healthcare&limit=50` | Search the universe |
 | `GET /api/securities/{id}` | One stock: identifiers, history range, latest snapshot |
 | `GET /api/securities/{id}/bars?start=2025-01-01` | Daily prices |
+| `GET /api/securities/{id}/fundamentals?period_type=FY&periods=8` | Financial statements, one row per metric (`Q` for quarters) |
 | `GET /api/ingest/runs` | Pipeline run history |
 | `GET /api/data/quality` | Quality checks |
 
@@ -424,6 +559,23 @@ JOIN fx_rates f ON f.base = 'USD' AND f.quote = s.currency_code AND f.date = b.d
 WHERE s.id = 2;
 ```
 
+```sql
+-- Annual revenue and net income for one company (latest known values)
+SELECT DISTINCT ON (f.metric, f.period_end) f.metric, f.period_end, f.value, f.unit
+FROM financial_facts f
+JOIN securities s ON s.id = f.security_id
+JOIN exchanges e ON e.id = s.exchange_id
+WHERE e.mic = 'XNAS' AND s.symbol = 'AAPL' AND f.period_type = 'FY'
+  AND f.metric IN ('revenue', 'net_income')
+ORDER BY f.metric, f.period_end DESC, f.known_since DESC;
+
+-- What was known on a past date (point-in-time, for backtests)
+SELECT DISTINCT ON (f.metric, f.period_end) f.metric, f.period_end, f.value
+FROM financial_facts f
+WHERE f.security_id = 123 AND f.known_since <= DATE '2022-06-30'
+ORDER BY f.metric, f.period_end DESC, f.known_since DESC;
+```
+
 In Python: `pandas.read_sql(query, "postgresql+psycopg://stockscanner:stockscanner@localhost/stockscanner")`.
 
 ### Known limitations (free data)
@@ -431,5 +583,7 @@ In Python: `pandas.read_sql(query, "postgresql+psycopg://stockscanner:stockscann
 - End-of-day only, no real-time prices.
 - Delisted companies mostly missing before we started tracking them (survivorship bias in backtests).
 - Some illiquid stocks have noisy prices; check the quality section before trusting a series.
-- Fundamentals (financial statements), holiday calendars and industries are not loaded yet.
+- Non-US fundamentals: only ~4 years from Yahoo, without filing dates (European filings via ESEF are planned).
+- Quarterly SEC data has no separate Q4 for flow metrics (companies report it only inside the annual figure).
+- Exchange holiday calendars are not loaded yet.
 """

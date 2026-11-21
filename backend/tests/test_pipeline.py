@@ -83,6 +83,8 @@ def test_company_key() -> None:
     assert company_key("APPLE INC") == "apple"
     assert company_key("Teva Pharmaceutical Industries Ltd") == "teva pharmaceutical industries"
     assert company_key("Alphabet Inc. Class A") == "alphabet"
+    assert company_key("Alphabet Inc. Class C") == "alphabet"
+    assert company_key("Brown-Forman Corp Cl B") == "brown forman"
 
 
 def test_universe_resolves_listings(db: Session) -> None:

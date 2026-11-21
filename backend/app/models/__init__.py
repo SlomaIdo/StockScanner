@@ -1,5 +1,6 @@
 """Import all models so they register on ``Base.metadata`` (used by Alembic)."""
 
+from app.models.fundamentals import FinancialFact
 from app.models.ingest import IngestRun, IngestStatus
 from app.models.market_data import (
     CorporateAction,
@@ -17,6 +18,7 @@ __all__ = [
     "Currency",
     "DailyBar",
     "Exchange",
+    "FinancialFact",
     "FxRate",
     "Industry",
     "IngestRun",
