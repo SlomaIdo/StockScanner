@@ -2,7 +2,9 @@
 
 Steps:
 1. Ask the provider for equities on each exchange above a market-cap floor, tagged by sector.
-2. Drop listings quoted in a foreign currency (e.g. Toyota in JPY on London).
+2. Drop listings quoted in a foreign currency (e.g. Toyota in JPY on London), and passive
+   quote lines with almost no trading relative to their size (e.g. Samsung quoted in EUR on
+   Vienna: daily turnover ~0.000001% of market cap, vs >0.003% for real listings).
 3. Resolve cross-listings: when the same company appears on several exchanges, the exchange
    where it trades most (by dollar volume) is primary. Other listings are kept as linked
    secondaries only if they carry real trading (>= 10% of the primary's dollar volume), e.g.
@@ -17,7 +19,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -30,6 +32,14 @@ log = logging.getLogger(__name__)
 
 STALE_AFTER_DAYS = 14
 DUAL_LISTING_MIN_VOLUME_SHARE = 0.10
+# Daily dollar volume / market cap. Real listings, even illiquid ones, are well above this.
+MIN_DAILY_TURNOVER = 1e-6
+
+# Listings no general rule catches, excluded by hand: (exchange MIC, symbol) -> reason.
+EXCLUDED_LISTINGS: dict[tuple[str, str], str] = {
+    ("XETR", "1ANT"): "tracker certificate on a private company (Anthropic); not a listed equity",
+    ("XSWX", "NOVNEE"): "second trading line of Novartis (same shares as NOVN)",
+}
 
 
 @dataclass(frozen=True)
@@ -99,6 +109,14 @@ class Candidate:
     dollar_volume_usd: float
 
 
+def is_passive_quote(c: Candidate) -> bool:
+    """A quote line with (almost) no trading relative to market cap, e.g. foreign stocks
+    listed in local currency on Vienna's or Warsaw's global segments."""
+    if c.market_cap_usd <= 0:
+        return False
+    return c.dollar_volume_usd / c.market_cap_usd < MIN_DAILY_TURNOVER
+
+
 @dataclass(frozen=True)
 class Resolved:
     candidate: Candidate
@@ -153,6 +171,7 @@ def build_universe(
     scope = ",".join(g.name for g in groups)
     with track_run(session, "universe", scope) as run:
         candidates: list[Candidate] = []
+        rejected: list[str] = []  # provider symbols deliberately excluded this run
         for group in groups:
             for mic in group.mics:
                 exchange = exchanges[mic]
@@ -172,25 +191,41 @@ def build_universe(
                     run.failed += 1
                     run.note(f"{mic}: {exc}")
                     continue
-                foreign = 0
+                foreign = passive = 0
                 for listing in listings:
                     if listing.currency != exchange.currency_code:
                         foreign += 1
                         continue
-                    candidates.append(
-                        Candidate(
-                            group=group.name,
-                            listing=listing,
-                            market_cap_usd=(listing.market_cap or 0.0) / rate,
-                            dollar_volume_usd=(listing.avg_volume_3m or 0.0)
-                            * (listing.price or 0.0)
-                            / rate,
-                        )
+                    if (mic, listing.symbol) in EXCLUDED_LISTINGS:
+                        rejected.append(listing.provider_symbol)
+                        continue
+                    candidate = Candidate(
+                        group=group.name,
+                        listing=listing,
+                        market_cap_usd=(listing.market_cap or 0.0) / rate,
+                        dollar_volume_usd=(listing.avg_volume_3m or 0.0)
+                        * (listing.price or 0.0)
+                        / rate,
                     )
+                    if is_passive_quote(candidate):
+                        passive += 1
+                        rejected.append(listing.provider_symbol)
+                        continue
+                    candidates.append(candidate)
                 run.ok += 1
-                run.note(f"{mic}: {len(listings)} listings ({foreign} foreign-currency dropped)")
+                run.note(
+                    f"{mic}: {len(listings)} listings ({foreign} foreign-currency, "
+                    f"{passive} passive quotes dropped)"
+                )
 
-        resolved = resolve_cross_listings(candidates)
+        # Also compare against listings already tracked in *other* groups, so a group refreshed
+        # on its own (as the nightly scheduler does) still recognises cross-listings, e.g. a
+        # US company's Xetra line during the EU refresh.
+        refreshed_mics = [m for g in groups for m in g.mics]
+        references, reference_ids = _reference_candidates(
+            session, provider.name, refreshed_mics, rates
+        )
+        resolved = resolve_cross_listings(candidates + references)
         selected: list[Resolved] = []
         for group in groups:
             in_group = sorted(
@@ -206,7 +241,7 @@ def build_universe(
             )
             selected.extend(chosen)
 
-        ids: dict[str, int] = {}
+        ids: dict[str, int] = dict(reference_ids)
         for r in selected:
             security, created = _upsert_security(
                 session, provider.name, r.candidate, exchanges, sectors, today
@@ -224,9 +259,10 @@ def build_universe(
         result.selected = len(selected)
         session.commit()
 
-        # Listings we explicitly rejected as passive cross-listings are deactivated now.
+        # Listings we deliberately rejected (passive quotes, minor cross-listings) are
+        # deactivated now rather than after the grace period.
         kept = {r.candidate.listing.provider_symbol for r in resolved}
-        rejected = [
+        rejected += [
             c.listing.provider_symbol for c in candidates if c.listing.provider_symbol not in kept
         ]
         if rejected:
@@ -262,6 +298,61 @@ def build_universe(
             f"selected={result.selected} created={result.created} deactivated={result.deactivated}"
         )
     return result
+
+
+REFERENCE_GROUP = "__reference__"
+
+
+def _reference_candidates(
+    session: Session, provider_name: str, refreshed_mics: list[str], rates: dict[str, float]
+) -> tuple[list[Candidate], dict[str, int]]:
+    """Active securities outside the refreshed exchanges, as candidates built from their
+    latest snapshot. They take part in cross-listing resolution but are never re-selected."""
+    rows = session.execute(
+        text(
+            """
+            SELECT s.id, i.external_symbol, s.symbol, e.mic, s.name, s.currency_code,
+                   i.price_divisor, q.price, q.market_cap, q.avg_volume_3m
+            FROM securities s
+            JOIN exchanges e ON e.id = s.exchange_id
+            JOIN security_identifiers i ON i.security_id = s.id AND i.provider = :provider
+            JOIN LATERAL (
+                SELECT price, market_cap, avg_volume_3m FROM quote_snapshots
+                WHERE security_id = s.id ORDER BY date DESC LIMIT 1
+            ) q ON true
+            WHERE s.is_active AND NOT (e.mic = ANY(:mics))
+            """
+        ),
+        {"provider": provider_name, "mics": refreshed_mics},
+    )
+    candidates: list[Candidate] = []
+    ids: dict[str, int] = {}
+    for r in rows:
+        rate = rates.get(r.currency_code)
+        if not rate:
+            continue
+        listing = Listing(
+            provider_symbol=r.external_symbol,
+            symbol=r.symbol,
+            exchange_mic=r.mic,
+            name=r.name,
+            currency=r.currency_code,
+            price_divisor=r.price_divisor,
+            sector=None,
+            price=r.price,
+            market_cap=r.market_cap,
+            avg_volume_3m=r.avg_volume_3m,
+        )
+        candidates.append(
+            Candidate(
+                group=REFERENCE_GROUP,
+                listing=listing,
+                market_cap_usd=(r.market_cap or 0.0) / rate,
+                dollar_volume_usd=(r.avg_volume_3m or 0.0) * (r.price or 0.0) / rate,
+            )
+        )
+        ids[r.external_symbol] = r.id
+    return candidates, ids
 
 
 def _upsert_security(

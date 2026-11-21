@@ -160,6 +160,71 @@ def test_universe_deactivates_rejected_cross_listing_immediately(db: Session) ->
     assert security_by_symbol(db, "PANW", "XTAE").is_active is False
 
 
+def test_group_refresh_resolves_against_other_groups(db: Session) -> None:
+    """The scheduler refreshes one group at a time; cross-listings must still be caught."""
+    update_fx(db, FakeProvider(fx=FX), start=TODAY - dt.timedelta(days=10))
+    us = FakeProvider(
+        listings={
+            "XNAS": [
+                listing("AAPL", "XNAS", "Apple Inc.", avg_volume=5e7, price=200, market_cap=3e12),
+                listing("NICE", "XNAS", "NICE Ltd.", avg_volume=4e5, price=150, market_cap=9e9),
+            ]
+        }
+    )
+    build_universe(db, us, [group("US", "XNAS")])
+
+    other = FakeProvider(
+        listings={
+            "XETR": [listing("APC.DE", "XETR", "Apple Inc", currency="EUR", avg_volume=5e4,
+                             price=180, market_cap=2.7e12)],
+            "XTAE": [listing("NICE.TA", "XTAE", "NICE Ltd", currency="ILS", avg_volume=7e4,
+                             price=600, market_cap=33e9)],
+        }
+    )  # fmt: skip
+    build_universe(db, other, [group("EU", "XETR")])
+    build_universe(db, other, [group("IL", "XTAE")])
+
+    assert set(db.scalars(select(Security.symbol).where(Security.is_active))) == {
+        "AAPL",
+        "NICE",
+    }
+    nice_ta = security_by_symbol(db, "NICE", "XTAE")
+    assert nice_ta.is_active
+    assert nice_ta.primary_security_id == security_by_symbol(db, "NICE", "XNAS").id
+
+
+def test_universe_drops_passive_quote_lines(db: Session) -> None:
+    update_fx(db, FakeProvider(fx=FX), start=TODAY - dt.timedelta(days=10))
+    provider = FakeProvider(
+        listings={
+            "XWBO": [
+                # Samsung quoted in EUR on Vienna: huge market cap, almost no trading.
+                listing("SSU.VI", "XWBO", "Samsung Electronics", currency="EUR",
+                        market_cap=700e9, avg_volume=10, price=50),
+                # A genuinely small, thinly traded local company is kept.
+                listing("POST.VI", "XWBO", "Oesterreichische Post", currency="EUR",
+                        market_cap=2e9, avg_volume=500, price=30),
+            ]
+        }
+    )  # fmt: skip
+    build_universe(db, provider, [group("EU", "XWBO")])
+    assert set(db.scalars(select(SecurityIdentifier.external_symbol))) == {"POST.VI"}
+
+
+def test_universe_respects_exclusion_list(db: Session) -> None:
+    update_fx(db, FakeProvider(fx=FX), start=TODAY - dt.timedelta(days=10))
+    provider = FakeProvider(
+        listings={
+            "XETR": [
+                listing("1ANT.DE", "XETR", "Anthropic PBC", currency="EUR"),
+                listing("SAP.DE", "XETR", "SAP SE", currency="EUR"),
+            ]
+        }
+    )
+    build_universe(db, provider, [group("EU", "XETR")])
+    assert set(db.scalars(select(Security.symbol))) == {"SAP"}
+
+
 def test_universe_top_n_and_floor(db: Session) -> None:
     update_fx(db, FakeProvider(fx=FX), start=TODAY - dt.timedelta(days=10))
     provider = FakeProvider(

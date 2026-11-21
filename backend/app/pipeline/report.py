@@ -50,6 +50,8 @@ def build_report(session: Session) -> str:
         SELECT
           (SELECT count(*) FROM securities WHERE is_active) AS active,
           (SELECT count(*) FROM securities WHERE NOT is_active) AS inactive,
+          (SELECT count(*) FROM securities WHERE is_active
+              AND last_seen_on < (SELECT max(last_seen_on) FROM securities)) AS grace,
           (SELECT count(*) FROM securities WHERE is_active AND primary_security_id IS NOT NULL)
               AS dual,
           (SELECT count(*) FROM daily_bars) AS bars,
@@ -103,15 +105,18 @@ def build_report(session: Session) -> str:
     top = _q(
         session,
         """
-        SELECT e.mic, s.symbol, s.name, sec.name AS sector, snap.market_cap_usd
+        SELECT e.mic, s.symbol, s.name, sec.name AS sector, snap.market_cap_usd,
+               pe.mic || ':' || p.symbol AS primary_listing
         FROM securities s
         JOIN exchanges e ON e.id = s.exchange_id
         LEFT JOIN sectors sec ON sec.id = s.sector_id
+        LEFT JOIN securities p ON p.id = s.primary_security_id
+        LEFT JOIN exchanges pe ON pe.id = p.exchange_id
         JOIN LATERAL (
             SELECT market_cap_usd FROM quote_snapshots q
             WHERE q.security_id = s.id ORDER BY q.date DESC LIMIT 1
         ) snap ON true
-        WHERE s.is_active AND s.primary_security_id IS NULL
+        WHERE s.is_active
         ORDER BY snap.market_cap_usd DESC NULLS LAST
         """,
     )
@@ -163,6 +168,11 @@ def build_report(session: Session) -> str:
             [
                 ["Active stocks", _n(totals["active"])],
                 ["  of which dual listings", _n(totals["dual"])],
+                [
+                    "  of which in grace period",
+                    f"{_n(totals['grace'])} (not picked in the latest refresh; kept active for "
+                    "14 days so a flaky day doesn't drop them)",
+                ],
                 ["Inactive (delisted / dropped)", _n(totals["inactive"])],
                 ["Exchanges with data", _n(len(exchanges))],
                 ["Daily price bars", _n(totals["bars"])],
@@ -271,7 +281,12 @@ def build_report(session: Session) -> str:
     w("")
 
     # -- largest ---------------------------------------------------------------
-    w("## Largest companies per group (primary listings)")
+    w("## Largest companies per group")
+    w("")
+    w(
+        "Includes dual listings, marked with the company's most liquid listing (e.g. ASML in "
+        "Amsterdam trades less than on Nasdaq, so Nasdaq is its primary)."
+    )
     w("")
     for g in groups:
         rows = [r for r in top if mic_group.get(r["mic"]) == g][:10]
@@ -281,13 +296,14 @@ def build_report(session: Session) -> str:
         w("")
         w(
             _table(
-                ["#", "Symbol", "Exchange", "Company", "Sector", "Market cap"],
+                ["#", "Symbol", "Exchange", "Company", "Sector", "Market cap", "Note"],
                 [
                     [str(i), r["symbol"], r["mic"], r["name"][:40], r["sector"] or DASH,
-                     _usd(r["market_cap_usd"])]
+                     _usd(r["market_cap_usd"]),
+                     f"dual, primary {r['primary_listing']}" if r["primary_listing"] else ""]
                     for i, r in enumerate(rows, 1)
                 ],
-                "rlllll",
+                "rllllll",
             )
         )  # fmt: skip
         w("")

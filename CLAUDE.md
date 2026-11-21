@@ -12,6 +12,10 @@
 - Data pipeline: `backend/app/providers/` (provider interfaces + Yahoo adapter) and
   `backend/app/pipeline/` (fx, universe, prices, quality). CLI: `uv run stockscanner --help`.
   Tests use `tests/fakes.py` (FakeProvider); never hit the network in tests.
+  Universe rules (pipeline/universe.py): foreign-currency quotes and passive quote lines
+  (turnover < 1e-6/day) dropped; `EXCLUDED_LISTINGS` for hand-picked exceptions; group
+  refreshes resolve cross-listings against other groups already in the DB.
+  `stockscanner report` regenerates docs/DATA_REPORT.md after data changes.
   Yahoo quirks handled: sub-unit quotes (ILA, GBp), split-adjusted closes (refetch on new
   split), 100x unit breaks in TASE history, inconsistent OHLC on illiquid stocks.
 - Data sources are free only (Yahoo, Stooq, EDGAR, ESEF, FRED). Every source goes behind a

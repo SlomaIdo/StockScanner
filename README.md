@@ -4,7 +4,8 @@ My personal stock scanner app and bot to guide me with investing. The sky is the
 
 A platform to scan and browse stocks worldwide, and a workbench for ML and AI
 tools that help understand the market. See [docs/ROADMAP.md](docs/ROADMAP.md)
-for the plan and progress.
+for the plan and progress, and [docs/DATA_REPORT.md](docs/DATA_REPORT.md) for what is in the
+database and how to use it.
 
 ## Layout
 
@@ -54,6 +55,7 @@ The first backfill of ~5,000 stocks takes roughly 20 minutes. Other commands:
 | `stockscanner nightly` | FX + universe + update (what the scheduler runs) |
 | `stockscanner quality` | Data-quality report |
 | `stockscanner status` | Coverage per exchange and recent runs |
+| `stockscanner report` | Regenerate [docs/DATA_REPORT.md](docs/DATA_REPORT.md): coverage, freshness, quality, usage guide |
 
 The universe today: top 3,000 US stocks (> $100M), all of TASE, and the largest 1,500
 European stocks (> $100M). Asia is configured but disabled; enable it in
