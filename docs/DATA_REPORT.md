@@ -1,6 +1,6 @@
 # StockScanner data report
 
-Generated 2026-11-21 19:40 UTC from the live database. Regenerate any time with `stockscanner report`.
+Generated 2026-11-21 21:32 UTC from the live database. Regenerate any time with `stockscanner report`.
 
 ## At a glance
 
@@ -25,9 +25,9 @@ Generated 2026-11-21 19:40 UTC from the live database. Regenerate any time with 
 | --- | --- | --- | --- | --- | --- |
 | backfill | success | all | 2026-11-21 19:03 | 1 / 0 | 2026-11-21 19:03 |
 | fundamentals:sec | partial | 2561 companies | 2026-11-21 19:17 | 2419 / 142 | 2026-11-21 19:39 |
-| fundamentals:yahoo | running | 1967 companies | 2026-11-21 19:13 | 0 / 0 | 2026-11-21 19:12 |
+| fundamentals:yahoo | partial | 145 companies | 2026-11-21 21:13 | 102 / 43 | 2026-11-21 21:18 |
 | fx | success | ILS,EUR,GBP,CHF,SEK,DKK,NOK,PLN,JPY,KRW, | 2026-11-21 18:21 | 12 / 0 | 2026-11-21 18:21 |
-| profiles | success | 5 companies | 2026-11-21 19:12 | 5 / 0 | 2026-11-21 19:12 |
+| profiles | success | 1052 companies | 2026-11-21 21:18 | 1052 / 0 | 2026-11-21 21:32 |
 | universe | success | EU | 2026-11-21 19:02 | 16 / 0 | 2026-11-21 19:03 |
 
 Nightly schedule (weekdays, run by the `scheduler` service):
@@ -138,15 +138,15 @@ US companies come from SEC EDGAR (official filings, quarterly and annual, typica
 | Source | Values stored | Companies | Latest value known since |
 | --- | ---: | ---: | --- |
 | sec | 2,634,999 | 2,840 | 2026-11-20 |
-| yahoo | 89,345 | 548 | 2026-11-21 |
+| yahoo | 317,654 | 1,968 | 2026-11-21 |
 
 | Group | Companies | With SEC data | With Yahoo data | Without data | Country known | Industry known |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| EU | 1,430 | 0 (0%) | 511 (36%) | 919 (64%) | 506 (35%) | 505 (35%) |
-| US | 2,997 | 2,808 (94%) | 20 (1%) | 169 (6%) | 25 (1%) | 25 (1%) |
-| IL | 499 | 0 (0%) | 17 (3%) | 482 (97%) | 17 (3%) | 17 (3%) |
+| EU | 1,430 | 0 (0%) | 1,420 (99%) | 10 (1%) | 1,368 (96%) | 1,372 (96%) |
+| US | 2,997 | 2,808 (94%) | 145 (5%) | 44 (1%) | 2,991 (100%) | 2,991 (100%) |
+| IL | 499 | 0 (0%) | 403 (81%) | 96 (19%) | 499 (100%) | 498 (100%) |
 
-111 industries are in use under the 11 sectors. The nightly job keeps fundamentals fresh in batches: SEC data is re-checked about weekly, Yahoo monthly, profiles (country, industry) every 90 days.
+145 industries are in use under the 11 sectors. The nightly job keeps fundamentals fresh in batches: SEC data is re-checked about weekly, Yahoo monthly, profiles (country, industry) every 90 days.
 
 ### Companies by country of domicile
 
@@ -154,26 +154,26 @@ Where companies are based, which can differ from where they trade (e.g. many Isr
 
 | Country | Companies |
 | --- | ---: |
-| (unknown) | 4,378 |
-| GB | 70 |
-| CH | 62 |
-| DE | 61 |
-| SE | 54 |
-| FR | 52 |
-| IT | 35 |
-| NL | 28 |
-| ES | 25 |
-| US | 24 |
-| DK | 22 |
-| FI | 17 |
-| IL | 17 |
-| NO | 14 |
-| PL | 14 |
-| BE | 13 |
-| AT | 11 |
-| IE | 6 |
-| LU | 5 |
-| PT | 4 |
+| US | 2,461 |
+| IL | 514 |
+| GB | 261 |
+| SE | 172 |
+| CH | 160 |
+| DE | 150 |
+| FR | 150 |
+| CA | 125 |
+| IT | 92 |
+| (unknown) | 68 |
+| ES | 65 |
+| NL | 61 |
+| NO | 59 |
+| FI | 47 |
+| CN | 46 |
+| DK | 44 |
+| BE | 43 |
+| IE | 40 |
+| BM | 40 |
+| PL | 39 |
 
 ## FX rates (units per 1 USD, latest)
 
