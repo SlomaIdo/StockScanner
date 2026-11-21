@@ -1,0 +1,39 @@
+services:
+  db:
+    image: timescale/timescaledb:2.17.2-pg16
+    environment:
+      POSTGRES_USER: stockscanner
+      POSTGRES_PASSWORD: stockscanner
+      POSTGRES_DB: stockscanner
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockscanner"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      SS_DATABASE_URL: postgresql+psycopg://stockscanner:stockscanner@db:5432/stockscanner
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      args:
+        BACKEND_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  db-data:

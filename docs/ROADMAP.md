@@ -63,12 +63,12 @@ fetched data nightly so our own history accumulates.
 
 ## Phase 0: Foundation
 
-- [ ] Monorepo layout: `backend/`, `web/`, `ml/`, `docs/`
-- [ ] `docker-compose` with Postgres + TimescaleDB
-- [ ] FastAPI skeleton with health endpoint, config, logging
-- [ ] Next.js skeleton
-- [ ] CI: lint (ruff, eslint), type-check, tests
-- [ ] Core data model: exchanges, securities (ISIN/FIGI mapping), daily bars,
+- [x] Monorepo layout: `backend/`, `web/`, `ml/`, `docs/`
+- [x] `docker-compose` with Postgres + TimescaleDB
+- [x] FastAPI skeleton with health endpoint, config, logging
+- [x] Next.js skeleton
+- [x] CI: lint (ruff, eslint), type-check, tests
+- [x] Core data model: exchanges, securities (ISIN/FIGI mapping), daily bars,
       corporate actions, currencies
 
 ## Phase 1: Data pipeline
@@ -80,12 +80,14 @@ fetched data nightly so our own history accumulates.
 - [ ] Nightly incremental updates per exchange, in local market timezone
 - [ ] Split/dividend adjustment
 - [ ] Currency normalization (local + USD)
+- [ ] Sub-unit quotes: London in pence (GBp), Tel Aviv in agorot (ILA)
 - [ ] Data-quality checks and ingest monitoring
 - [ ] Fundamentals ingest: EDGAR (US), ESEF (EU), Yahoo (rest)
 - [ ] Statement normalization into one standard schema
 - [ ] Nightly fundamentals snapshots (build our own history)
 - [ ] Unified sector/industry taxonomy (Yahoo + SIC mapping)
-- [ ] Exchange calendars and FX rates
+- [x] Exchange reference data (24 exchanges: US, Israel, Europe, Asia next wave)
+- [ ] Exchange holiday calendars and FX rates
 
 ## Phase 2: Scanner & browser (MVP)
 
