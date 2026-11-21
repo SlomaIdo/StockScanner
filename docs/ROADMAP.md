@@ -29,18 +29,37 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
    fundamentals)        indicators, scans)   backtests, notebooks)
                           │
               Data provider adapters
-       (yfinance / EODHD / FMP / news / macro)
+       (Yahoo / Stooq / EDGAR / ESEF / FRED / news)
 ```
 
 ## Open decisions
 
-| # | Decision | Default until decided |
-|---|----------|-----------------------|
-| 1 | Data budget: free vs paid global provider | Start free (yfinance), adapter-based |
+| # | Decision | Status |
+|---|----------|--------|
+| 1 | Data budget: free vs paid global provider | **Decided: free sources only** (adapter-based, paid can be added later) |
 | 2 | App form: PWA vs native mobile | PWA |
 | 3 | Hosting: local vs cloud | Local (docker-compose) first |
 | 4 | First markets | US, Israel (TASE), Europe |
 | 5 | Investing style focus | Mixed: fundamentals + swing technicals |
+
+## Data sources (free)
+
+| Need | Source | Notes |
+|------|--------|-------|
+| Daily prices, splits, dividends | Yahoo Finance (`yfinance`) | Most world exchanges; unofficial, rate-limited, personal use |
+| Backup daily prices | Stooq | Cross-check Yahoo |
+| US fundamentals | SEC EDGAR XBRL API | Quarterly/annual since ~2009, point-in-time via filing dates |
+| EU fundamentals | filings.xbrl.org (ESEF) + Yahoo | Annual since ~2020–21 |
+| Other fundamentals (incl. TASE) | Yahoo | ~4y annual, ~4–5 quarters; patchy for small caps |
+| US fund holdings | SEC N-PORT | Quarterly full holdings |
+| Symbol universe / IDs | Exchange directories, OpenFIGI | Built exchange by exchange |
+| Sectors | Yahoo sector/industry, SEC SIC | Mapped to one internal taxonomy (GICS is proprietary) |
+| Macro, FX | FRED, ECB | |
+| News | RSS, GDELT | |
+
+Known limits: no real-time, no delisted stocks (survivorship bias in
+backtests), shallow non-US fundamental history. Mitigation: snapshot all
+fetched data nightly so our own history accumulates.
 
 ## Phase 0: Foundation
 
@@ -62,18 +81,37 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Split/dividend adjustment
 - [ ] Currency normalization (local + USD)
 - [ ] Data-quality checks and ingest monitoring
+- [ ] Fundamentals ingest: EDGAR (US), ESEF (EU), Yahoo (rest)
+- [ ] Statement normalization into one standard schema
+- [ ] Nightly fundamentals snapshots (build our own history)
+- [ ] Unified sector/industry taxonomy (Yahoo + SIC mapping)
+- [ ] Exchange calendars and FX rates
 
 ## Phase 2: Scanner & browser (MVP)
 
 - [ ] Technical indicators engine (RSI, MAs, ATR, breakouts, volume spikes)
-- [ ] Fundamentals ingest (P/E, growth, margins, debt)
+- [ ] Historical ratios computed from statements + prices (P/E, EV/EBITDA,
+      ROE, ROIC, margins, growth, FCF yield, quality scores)
 - [ ] Screener API with composable filters
 - [ ] Screener UI with saved scans
 - [ ] Stock detail page: chart, key stats, fundamentals, peers
 - [ ] Watchlists
 - [ ] Alerts (email / Telegram) when saved scans get new matches
 
-## Phase 3: ML platform
+## Phase 3: Global market structure (first analytics module)
+
+- [ ] Return alignment across exchange calendars; local-currency and USD views
+- [ ] Country × sector indices (market-cap weighted)
+- [ ] Correlation matrices (stocks, sectors, countries) with heatmap UI
+- [ ] Rolling correlations and crisis/regime comparison
+- [ ] Time-zone handling: weekly returns and lagged correlations
+- [ ] Clustering by return behaviour (hierarchical, with dendrogram);
+      compare clusters to official sectors to find mislabelled stocks
+- [ ] Correlation network (minimum spanning tree) visualization
+- [ ] Lead-lag analysis across markets
+- [ ] Factor decomposition: global / region / sector / idiosyncratic
+
+## Phase 4: ML platform
 
 - [ ] Feature store built on prices and fundamentals
 - [ ] Backtesting engine
@@ -81,18 +119,19 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Anomaly / unusual-volume detection
 - [ ] Market regime classification
 - [ ] Return / volatility forecasting
-- [ ] Similar-stock clustering (embeddings)
+- [ ] Similar-stock embeddings (returns + fundamentals), building on Phase 3
 - [ ] Expose model outputs as screener columns
 
-## Phase 4: AI layer
+## Phase 5: AI layer
 
 - [ ] LLM assistant using the platform APIs as tools (natural-language scans,
       company summaries)
 - [ ] News and filings ingestion
+- [ ] Extract financials from unstructured filings (e.g. TASE MAYA PDFs)
 - [ ] Sentiment scoring
 - [ ] Daily watchlist brief
 
-## Phase 5: Deploy & polish
+## Phase 6: Deploy & polish
 
 - [ ] Deploy to a cloud host (Fly.io / Hetzner / Railway)
 - [ ] PWA install on phone
