@@ -25,6 +25,17 @@ services:
       db:
         condition: service_healthy
 
+  scheduler:
+    # Nightly data pipeline: each market group runs after its exchanges close.
+    build: ./backend
+    command: ["python", "-m", "app.scheduler"]
+    environment:
+      SS_DATABASE_URL: postgresql+psycopg://stockscanner:stockscanner@db:5432/stockscanner
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
   web:
     build:
       context: ./web

@@ -73,21 +73,25 @@ fetched data nightly so our own history accumulates.
 
 ## Phase 1: Data pipeline
 
-- [ ] Provider adapter interface
-- [ ] First adapter (free source)
-- [ ] Global symbol universe loader
-- [ ] Historical price backfill
-- [ ] Nightly incremental updates per exchange, in local market timezone
-- [ ] Split/dividend adjustment
-- [ ] Currency normalization (local + USD)
-- [ ] Sub-unit quotes: London in pence (GBp), Tel Aviv in agorot (ILA)
-- [ ] Data-quality checks and ingest monitoring
+- [x] Provider adapter interface
+- [x] First adapter: Yahoo Finance (prices, universe via screener, FX)
+- [x] Universe loader: US top 3,000, all TASE, EU top 1,500; cross-listing resolution
+      with linked dual listings (e.g. Teva on TASE and NYSE)
+- [x] Historical price backfill
+- [x] Nightly incremental updates per exchange, in local market timezone
+- [x] Split/dividend adjustment
+- [~] Currency normalization: daily FX vs USD stored; USD market caps done, USD price
+      series pending (Phase 3)
+- [x] Sub-unit quotes: London in pence (GBp), Tel Aviv in agorot (ILA)
+- [x] Data-quality checks and ingest monitoring
 - [ ] Fundamentals ingest: EDGAR (US), ESEF (EU), Yahoo (rest)
 - [ ] Statement normalization into one standard schema
-- [ ] Nightly fundamentals snapshots (build our own history)
-- [ ] Unified sector/industry taxonomy (Yahoo + SIC mapping)
+- [~] Nightly fundamentals snapshots: daily quote snapshots (market cap, P/E, P/B, yield)
+      done; full statements pending
+- [~] Unified sector/industry taxonomy: 11 sectors assigned from Yahoo; industries and
+      SIC mapping pending
 - [x] Exchange reference data (24 exchanges: US, Israel, Europe, Asia next wave)
-- [ ] Exchange holiday calendars and FX rates
+- [~] Exchange holiday calendars and FX rates: FX done, holiday calendars pending
 
 ## Phase 2: Scanner & browser (MVP)
 

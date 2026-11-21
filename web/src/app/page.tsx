@@ -1,6 +1,20 @@
+import Link from "next/link";
+
 import { BackendStatus } from "@/components/backend-status";
 
-const MODULES = [
+type Module = { title: string; description: string; href?: string };
+
+const MODULES: Module[] = [
+  {
+    title: "Stocks",
+    description: "Browse and search the tracked universe across the US, Israel and Europe.",
+    href: "/stocks",
+  },
+  {
+    title: "Data",
+    description: "Coverage per exchange, pipeline runs and data-quality checks.",
+    href: "/data",
+  },
   {
     title: "Screener",
     description: "Filter stocks worldwide by price, volume, technicals and fundamentals.",
@@ -19,9 +33,31 @@ const MODULES = [
   },
 ];
 
+function Card({ m }: { m: Module }) {
+  const body = (
+    <>
+      <div className="flex items-center justify-between">
+        <h2 className="font-medium">{m.title}</h2>
+        <span className={`text-xs ${m.href ? "text-emerald-500" : "text-muted"}`}>
+          {m.href ? "Open →" : "Coming soon"}
+        </span>
+      </div>
+      <p className="mt-2 text-sm text-muted">{m.description}</p>
+    </>
+  );
+  const base = "block rounded-lg border border-border p-5";
+  return m.href ? (
+    <Link href={m.href} className={`${base} transition-colors hover:border-emerald-500/60`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={base}>{body}</div>
+  );
+}
+
 export default function Home() {
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-12 sm:px-6">
+    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-12 sm:px-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">StockScanner</h1>
@@ -32,13 +68,7 @@ export default function Home() {
 
       <section className="mt-10 grid gap-4 sm:grid-cols-2">
         {MODULES.map((m) => (
-          <div key={m.title} className="rounded-lg border border-border p-5">
-            <div className="flex items-center justify-between">
-              <h2 className="font-medium">{m.title}</h2>
-              <span className="text-xs text-muted">Coming soon</span>
-            </div>
-            <p className="mt-2 text-sm text-muted">{m.description}</p>
-          </div>
+          <Card key={m.title} m={m} />
         ))}
       </section>
     </main>

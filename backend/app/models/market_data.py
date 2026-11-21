@@ -8,7 +8,7 @@ import datetime as dt
 import enum
 from decimal import Decimal
 
-from sqlalchemy import CHAR, BigInteger, Double, Enum, ForeignKey, Numeric, String
+from sqlalchemy import CHAR, BigInteger, Double, Enum, ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -25,7 +25,9 @@ class DailyBar(Base):
     open: Mapped[float | None] = mapped_column(Double)
     high: Mapped[float | None] = mapped_column(Double)
     low: Mapped[float | None] = mapped_column(Double)
-    close: Mapped[float] = mapped_column(Double, comment="Raw close in listing currency")
+    close: Mapped[float] = mapped_column(
+        Double, comment="Close in listing currency (main unit), adjusted for splits only"
+    )
     adj_close: Mapped[float | None] = mapped_column(
         Double, comment="Close adjusted for splits and dividends"
     )
@@ -40,6 +42,7 @@ class CorporateActionType(enum.StrEnum):
 
 class CorporateAction(Base):
     __tablename__ = "corporate_actions"
+    __table_args__ = (UniqueConstraint("security_id", "ex_date", "action_type"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     security_id: Mapped[int] = mapped_column(
@@ -69,4 +72,30 @@ class FxRate(Base):
     quote: Mapped[str] = mapped_column(CHAR(3), ForeignKey("currencies.code"), primary_key=True)
     date: Mapped[dt.date] = mapped_column(primary_key=True)
     rate: Mapped[float] = mapped_column(Double)
+    source: Mapped[str] = mapped_column(String(32))
+
+
+class QuoteSnapshot(Base):
+    """Daily snapshot of quote-level stats (market cap, valuation) per security.
+
+    Free sources only expose *current* values, so storing them every day builds
+    our own history over time.
+    """
+
+    __tablename__ = "quote_snapshots"
+
+    security_id: Mapped[int] = mapped_column(
+        ForeignKey("securities.id", ondelete="CASCADE"), primary_key=True
+    )
+    date: Mapped[dt.date] = mapped_column(primary_key=True, index=True)
+    price: Mapped[float | None] = mapped_column(Double, comment="Listing currency, main unit")
+    market_cap: Mapped[float | None] = mapped_column(Double, comment="Listing currency")
+    market_cap_usd: Mapped[float | None] = mapped_column(Double)
+    shares_outstanding: Mapped[float | None] = mapped_column(Double)
+    avg_volume_3m: Mapped[float | None] = mapped_column(Double)
+    trailing_pe: Mapped[float | None] = mapped_column(Double)
+    price_to_book: Mapped[float | None] = mapped_column(Double)
+    dividend_yield: Mapped[float | None] = mapped_column(
+        Double, comment="Trailing annual dividend yield as a fraction"
+    )
     source: Mapped[str] = mapped_column(String(32))

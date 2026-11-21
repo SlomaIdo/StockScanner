@@ -21,12 +21,43 @@ for the plan and progress.
 docker compose up --build
 ```
 
-- Web app: http://localhost:3000
+- Web app: http://localhost:3000 (Stocks and Data pages)
 - API docs: http://localhost:8000/docs
 - Postgres + TimescaleDB: `localhost:5432` (user/password/db: `stockscanner`)
 
 The backend applies migrations and loads reference data (currencies, exchanges,
 sectors) on startup.
+
+## Loading market data
+
+The data pipeline uses free sources only (Yahoo Finance for now). Run the first load once;
+after that the `scheduler` service keeps everything up to date every weekday evening.
+
+```bash
+docker compose exec backend stockscanner fx --years 10
+```
+
+```bash
+docker compose exec backend stockscanner universe
+```
+
+```bash
+docker compose exec backend stockscanner backfill --years 10
+```
+
+The first backfill of ~5,000 stocks takes roughly 20 minutes. Other commands:
+
+| Command | What it does |
+|---------|--------------|
+| `stockscanner universe -g IL` | Refresh the tracked stocks for one market group (US, IL, EU, ASIA) |
+| `stockscanner update` | Fetch the latest prices for everything tracked |
+| `stockscanner nightly` | FX + universe + update (what the scheduler runs) |
+| `stockscanner quality` | Data-quality report |
+| `stockscanner status` | Coverage per exchange and recent runs |
+
+The universe today: top 3,000 US stocks (> $100M), all of TASE, and the largest 1,500
+European stocks (> $100M). Asia is configured but disabled; enable it in
+`backend/app/pipeline/universe.py`.
 
 ## Local development
 

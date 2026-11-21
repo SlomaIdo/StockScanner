@@ -9,5 +9,10 @@
 - Web: `web/` (Next.js 16, app router, Tailwind 4). Read `web/AGENTS.md` first: this Next.js
   version differs from older ones; consult `web/node_modules/next/dist/docs/`.
   - Checks: `npm run lint && npm run typecheck && npm run build`
+- Data pipeline: `backend/app/providers/` (provider interfaces + Yahoo adapter) and
+  `backend/app/pipeline/` (fx, universe, prices, quality). CLI: `uv run stockscanner --help`.
+  Tests use `tests/fakes.py` (FakeProvider); never hit the network in tests.
+  Yahoo quirks handled: sub-unit quotes (ILA, GBp), split-adjusted closes (refetch on new
+  split), 100x unit breaks in TASE history, inconsistent OHLC on illiquid stocks.
 - Data sources are free only (Yahoo, Stooq, EDGAR, ESEF, FRED). Every source goes behind a
   provider adapter. Never commit API keys.
